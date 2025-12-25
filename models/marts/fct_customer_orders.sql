@@ -13,51 +13,53 @@ dbt_tutorial_payments as(
 ),
 
 
--- Logical CTEs
+-- Staging
 
 customers as (
     select
-        first_name || ' ' || last_name as name,
-        *
+        id as customer_id,
+        last_name as surname,
+        first_name as givenname,
+        first_name || ' ' || last_name as full_name
     from dbt_tutorial_customers
 ),
 
-a as (
+orders as (
 
     select
+
         row_number() over (partition by user_id order by order_date, id) as user_order_seq,
-        *
+        id as order_id,
+        user_id as customer_id,
+        order_date,
+        status as order_status,
+        _etl_loaded_at
+
     from dbt_tutorial_orders
 ),
 
-b as (
 
-    select
-        first_name || ' ' || last_name as name,
-            *
-    from dbt_tutorial_customers
-
-),
+-- Marts
 
 customer_order_history as (
 
     select
-        b.id as customer_id,
-        b.name as full_name,
-        b.last_name as surname,
-        b.first_name as givenname,
+        customers.customer_id,
+        customers.full_name,
+        customers.surname,
+        customers.givenname,
         min(order_date) as first_order_date,
 
         min(
             case 
-                when a.status not in ('returned','return_pending') 
+                when orders.order_status not in ('returned','return_pending') 
                 then order_date 
             end
         ) as first_non_returned_order_date,
 
         max(
             case 
-                when a.status not in ('returned','return_pending') 
+                when orders.order_status not in ('returned','return_pending') 
                 then order_date 
                 end
         ) as most_recent_non_returned_order_date,
@@ -69,7 +71,7 @@ customer_order_history as (
         coalesce(
             count(
                 case 
-                    when a.status != 'returned' 
+                    when orders.order_status != 'returned' 
                     then 1 
                     end
             ),0
@@ -77,7 +79,7 @@ customer_order_history as (
 
         sum(
             case 
-                when a.status not in ('returned','return_pending') 
+                when orders.order_status not in ('returned','return_pending') 
                 then round(c.amount/100.0,2) 
                 else 0 
                 end
@@ -85,7 +87,7 @@ customer_order_history as (
 
         sum(
             case 
-            when a.status not in ('returned','return_pending') 
+            when orders.order_status not in ('returned','return_pending') 
             then round(c.amount/100.0,2) 
             else 0 
             end)
@@ -93,26 +95,26 @@ customer_order_history as (
             nullif(
                 count(
                     case 
-                        when a.status not in ('returned','return_pending') 
+                        when orders.order_status not in ('returned','return_pending') 
                         then 1 
                         end
                 ),0
             ) as avg_non_returned_order_value,
 
-        array_agg(distinct a.id) as order_ids
+        array_agg(distinct orders.order_id) as order_ids
 
-    from  a
+    from  orders
 
-    join  b
+    join  customers
 
-    on a.user_id = b.id
+    on orders.customer_id = customers.customer_id
 
     left outer join dbt_tutorial_payments c
-    on a.id = c.orderid
+    on orders.order_id = c.orderid
 
-    where a.status not in ('pending') and c.status != 'fail'
+    where orders.order_status not in ('pending') and c.status != 'fail'
 
-    group by b.id, b.name, b.last_name, b.first_name
+    group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 
 ),
 
@@ -122,27 +124,27 @@ customer_order_history as (
 final as (
     select
 
-        orders.id as order_id,
-        orders.user_id as customer_id,
-        last_name as surname,
-        first_name as givenname,
+        orders.order_id,
+        orders.customer_id,
+        customers.surname,
+        customers.givenname,
         first_order_date,
         order_count,
         total_lifetime_value,
         round(amount/100.0,2) as order_value_dollars,
-        orders.status as order_status,
+        orders.order_status as order_status,
         payments.status as payment_status
 
-    from dbt_tutorial_orders as orders
+    from orders as orders
 
     join customers
-    on orders.user_id = customers.id
+    on orders.customer_id = customers.customer_id
 
     join  customer_order_history
-    on orders.user_id = customer_order_history.customer_id
+    on orders.customer_id = customer_order_history.customer_id
 
     left outer join dbt_tutorial_payments payments
-    on orders.id = payments.orderid
+    on orders.order_id = payments.orderid
 
     where payments.status != 'fail'
     )
