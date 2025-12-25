@@ -38,6 +38,21 @@ orders as (
     from dbt_tutorial_orders
 ),
 
+payments as (
+
+    select 
+
+        id as payment_id,
+        round(amount/100.0,2) as payment_amount,
+        paymentmethod as payment_method,
+        status as payment_status,
+        orderid as order_id,
+        created as payment_created_at,
+        _batched_at
+
+    from dbt_tutorial_payments
+
+),
 
 -- Marts
 
@@ -80,7 +95,7 @@ customer_order_history as (
         sum(
             case 
                 when orders.order_status not in ('returned','return_pending') 
-                then round(c.amount/100.0,2) 
+                then c.payment_amount 
                 else 0 
                 end
         ) as total_lifetime_value,
@@ -88,7 +103,7 @@ customer_order_history as (
         sum(
             case 
             when orders.order_status not in ('returned','return_pending') 
-            then round(c.amount/100.0,2) 
+            then c.payment_amount 
             else 0 
             end)
             /
@@ -109,10 +124,10 @@ customer_order_history as (
 
     on orders.customer_id = customers.customer_id
 
-    left outer join dbt_tutorial_payments c
-    on orders.order_id = c.orderid
+    left outer join payments c
+    on orders.order_id = c.order_id
 
-    where orders.order_status not in ('pending') and c.status != 'fail'
+    where orders.order_status not in ('pending') and c.payment_status != 'fail'
 
     group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 
@@ -131,9 +146,9 @@ final as (
         first_order_date,
         order_count,
         total_lifetime_value,
-        round(amount/100.0,2) as order_value_dollars,
-        orders.order_status as order_status,
-        payments.status as payment_status
+        payments.payment_amount as order_value_dollars, -- pay attention to this during audit
+        orders.order_status,
+        payments.payment_status
 
     from orders as orders
 
@@ -143,10 +158,10 @@ final as (
     join  customer_order_history
     on orders.customer_id = customer_order_history.customer_id
 
-    left outer join dbt_tutorial_payments payments
-    on orders.order_id = payments.orderid
+    left outer join payments
+    on orders.order_id = payments.order_id
 
-    where payments.status != 'fail'
+    where payments.payment_status != 'fail'
     )
   
     -- Final Select
