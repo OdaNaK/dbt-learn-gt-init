@@ -1,58 +1,17 @@
 -- Import CTEs
 
-with dbt_tutorial_customers as (
-    select * from {{source('jaffle_shop','customers')}}
-),
-
-dbt_tutorial_orders as (
-    select * from {{source('jaffle_shop','orders')}}
-),
-
-dbt_tutorial_payments as(
-    select * from {{source('stripe','payment')}}
-),
-
-
--- Staging
-
-customers as (
-    select
-        id as customer_id,
-        last_name as surname,
-        first_name as givenname,
-        first_name || ' ' || last_name as full_name
-    from dbt_tutorial_customers
+with customers as (
+    select * from {{ ref ('stg_customers') }}
 ),
 
 orders as (
-
-    select
-
-        row_number() over (partition by user_id order by order_date, id) as user_order_seq,
-        id as order_id,
-        user_id as customer_id,
-        order_date,
-        status as order_status,
-        _etl_loaded_at
-
-    from dbt_tutorial_orders
+    select * from {{ ref ('stg_orders') }}
 ),
 
-payments as (
-
-    select 
-
-        id as payment_id,
-        round(amount/100.0,2) as payment_amount,
-        paymentmethod as payment_method,
-        status as payment_status,
-        orderid as order_id,
-        created as payment_created_at,
-        _batched_at
-
-    from dbt_tutorial_payments
-
+payments as(
+    select * from {{ ref ('stg_payments') }}
 ),
+
 
 -- Marts
 
